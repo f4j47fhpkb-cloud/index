@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#111827">
+<title>モンスト角度ガイド+</title>
+<style>
+:root{--bg:#0b1220;--panel:#111c2e;--panel2:#18263c;--line:#30435e;--text:#f3f6fb;--muted:#aab8cb;--blue:#5aa7ff;--green:#4ade80;--red:#fb7185;--yellow:#facc15}
+*{box-sizing:border-box}html,body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+body{padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom);overscroll-behavior:none}
+header{padding:14px 16px 10px;background:#0b1220;position:sticky;top:0;z-index:5;border-bottom:1px solid var(--line)}
+h1{font-size:19px;margin:0 0 5px}header p{font-size:12px;color:var(--muted);margin:0}
+main{max-width:850px;margin:auto;padding:10px;display:grid;gap:10px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:10px}
+.toolbar{display:flex;flex-wrap:wrap;gap:7px;align-items:center}
+button,.filelabel,select,input[type=number]{font:inherit;color:var(--text);background:var(--panel2);border:1px solid #3b506e;border-radius:10px;padding:10px 12px;min-height:42px}
+button{cursor:pointer;touch-action:manipulation}button.active{background:#174b7c;border-color:var(--blue)}button:disabled{opacity:.4}
+.filelabel{display:inline-flex;align-items:center;gap:7px;cursor:pointer}
+input[type=file]{display:none}
+.small{font-size:12px;color:var(--muted);line-height:1.45}.sectiontitle{font-weight:700;font-size:14px;margin:0 0 8px}
+.stagewrap{background:#070b12;border-radius:12px;overflow:hidden;position:relative;border:1px solid #2c3b50}
+canvas{display:block;width:100%;height:auto;touch-action:none;max-height:64vh;object-fit:contain}
+.status{font-size:12px;color:var(--muted);margin-top:7px;min-height:18px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}.field{display:flex;flex-direction:column;gap:5px;font-size:12px;color:var(--muted)}.field input,.field select{width:100%;min-width:0}
+.tools button{flex:1;min-width:90px}.hint{border-left:3px solid var(--blue);padding:8px 10px;background:#101f34;border-radius:7px;font-size:12px;line-height:1.5;color:#d5e4f8}
+#routeList{display:grid;gap:6px}.route{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px;background:var(--panel2);border-radius:8px;font-size:12px}
+.route strong{font-size:13px}.route button{padding:6px 8px;min-height:32px}
+footer{padding:2px 12px 20px;color:var(--muted);font-size:11px;text-align:center}
+@media(min-width:700px){main{grid-template-columns: minmax(0,1.25fr) minmax(280px,.75fr);align-items:start} .visual{grid-row:span 2}canvas{max-height:75vh}}
+</style>
+</head>
+<body>
+<header><h1>🎯 モンスト角度ガイド+</h1><p>スクショ読込・自動候補検出・ドラッグ編集・複数ルート比較</p></header>
+<main>
+<section class="panel visual">
+  <div class="toolbar" style="margin-bottom:8px">
+    <label class="filelabel">📷 スクショ読込<input id="file" type="file" accept="image/*"></label>
+    <button id="auto">✨ 自動候補検出</button>
+    <button id="fit">画面に合わせる</button>
+  </div>
+  <div class="stagewrap"><canvas id="cv" width="720" height="1100"></canvas></div>
+  <div class="status" id="status">スクショを読み込んでね。2本指で拡大縮小、1本指で選択物を移動できます。</div>
+  <div class="hint" style="margin-top:8px">操作：オブジェクトをタップして選択 → ドラッグで移動。選択枠の丸いハンドルでサイズ変更。空白をドラッグすると画面移動。下の「追加」から敵・ブロック・発射位置を追加できます。</div>
+</section>
+<section class="panel">
+  <p class="sectiontitle">編集ツール</p>
+  <div class="toolbar tools">
+    <button data-mode="select" class="active">↖ 選択</button>
+    <button data-mode="block">▰ ブロック追加</button>
+    <button data-mode="enemy">⭕ 敵追加</button>
+    <button data-mode="start">🟢 発射位置</button>
+  </div>
+  <div class="toolbar" style="margin-top:7px">
+    <button id="undo">↶ 元に戻す</button><button id="redo">↷ やり直す</button><button id="delete">🗑 削除</button><button id="resetView">表示リセット</button>
+  </div>
+  <p class="sectiontitle" style="margin-top:14px">選択中オブジェクト</p>
+  <div class="grid2">
+    <label class="field">X位置<input id="ox" type="number" step="1"></label>
+    <label class="field">Y位置<input id="oy" type="number" step="1"></label>
+    <label class="field">幅<input id="ow" type="number" min="8" step="1"></label>
+    <label class="field">高さ<input id="oh" type="number" min="8" step="1"></label>
+  </div>
+  <button id="applyGeom" style="width:100%;margin-top:8px">数値を適用</button>
+  <p class="small" id="selectedInfo">未選択</p>
+</section>
+<section class="panel">
+  <p class="sectiontitle">反射ルート比較（簡易モデル）</p>
+  <div class="grid2">
+    <label class="field">中心角度（度）<input id="angle" type="number" value="0" min="-180" max="180"></label>
+    <label class="field">比較幅（±度）<input id="spread" type="number" value="20" min="0" max="90"></label>
+    <label class="field">刻み（度）<select id="step"><option>1</option><option selected>5</option><option>10</option></select></label>
+    <label class="field">最大反射数<input id="bounces" type="number" value="5" min="0" max="20"></label>
+  </div>
+  <div class="toolbar" style="margin-top:8px"><button id="routes" class="active">ルートを計算・表示</button><button id="clearRoutes">ルート消去</button></div>
+  <div id="routeList" style="margin-top:8px"></div>
+  <p class="small">注意：自動候補検出は画像処理による目安です。反射計算は壁・登録したブロック・円形の敵を使う簡易モデルで、モンスト本編の物理・判定・弱点・友情などを完全再現するものではありません。</p>
+</section>
+</main>
+<footer>画像はこの端末内で処理します。外部サーバーへのアップロードは行いません。</footer>
+<script>
+(()=> {
+const cv=document.getElementById('cv'),ctx=cv.getContext('2d',{willReadFrequently:true});
+const $=id=>document.getElementById(id);
+let img=null, objects=[], selected=null, mode='select', routes=[], view={scale:1,x:0,y:0}, history=[], future=[], pointer=null, pinch=null, nextId=1, imageData=null;
+const colors={block:'#facc15',enemy:'#fb7185',start:'#4ade80'};
+function say(s){$('status').textContent=s}
+function snap(){history.push(JSON.stringify({objects,selected,nextId}));if(history.length>60)history.shift();future=[];updateUndo()}
+function restore(s){let d=JSON.parse(s);objects=d.objects;selected=d.selected;nextId=d.nextId;draw();syncGeom();updateUndo()}
+function updateUndo(){$('undo').disabled=!history.length;$('redo').disabled=!future.length}
+function setMode(m){mode=m;document.querySelectorAll('[data-mode]').forEach(b=>b.classList.toggle('active',b.dataset.mode===m));say(({select:'オブジェクトをタップして選択・移動できます。',block:'ドラッグしてブロックの長方形を追加します。',enemy:'タップした位置に敵を追加します。',start:'タップした位置に発射位置を設定します。'})[m])}
+document.querySelectorAll('[data-mode]').forEach(b=>b.onclick=()=>setMode(b.dataset.mode));
+function coords(e){let r=cv.getBoundingClientRect();let sx=cv.width/r.width,sy=cv.height/r.height;return {x:(e.clientX-r.left)*sx,y:(e.clientY-r.top)*sy}}
+function world(p){return {x:(p.x-view.x)/view.scale,y:(p.y-view.y)/view.scale}}
+function screen(p){return {x:p.x*view.scale+view.x,y:p.y*view.scale+view.y}}
+function draw(){
+ ctx.clearRect(0,0,cv.width,cv.height);ctx.fillStyle='#070b12';ctx.fillRect(0,0,cv.width,cv.height);
+ if(img){ctx.save();ctx.translate(view.x,view.y);ctx.scale(view.scale,view.scale);ctx.drawImage(img,0,0,cv.width,cv.height);ctx.restore()}
+ else {ctx.fillStyle='#aab8cb';ctx.textAlign='center';ctx.font='24px sans-serif';ctx.fillText('スクリーンショットを読み込んでね',cv.width/2,cv.height/2)}
+ ctx.save();ctx.translate(view.x,view.y);ctx.scale(view.scale,view.scale);
+ for(const o of objects){
+  ctx.lineWidth=(o.id===selected?4:2)/view.scale;
+  if(o.type==='block'){ctx.fillStyle='rgba(250,204,21,.22)';ctx.strokeStyle=colors.block;ctx.fillRect(o.x,o.y,o.w,o.h);ctx.strokeRect(o.x,o.y,o.w,o.h)}
+  else if(o.type==='enemy'){ctx.fillStyle='rgba(251,113,133,.18)';ctx.strokeStyle=colors.enemy;ctx.beginPath();ctx.ellipse(o.x+o.w/2,o.y+o.h/2,Math.max(o.w,o.h)/2,Math.max(o.w,o.h)/2,0,0,Math.PI*2);ctx.fill();ctx.stroke()}
+  else {ctx.fillStyle=colors.start;ctx.strokeStyle='#dcfce7';ctx.beginPath();ctx.arc(o.x+o.w/2,o.y+o.h/2,Math.max(o.w,o.h)/2,0,Math.PI*2);ctx.fill();ctx.stroke()}
+  if(o.id===selected){ctx.strokeStyle='#fff';ctx.setLineDash([8/view.scale,5/view.scale]);ctx.strokeRect(o.x,o.y,o.w,o.h);ctx.setLineDash([]);ctx.fillStyle='#fff';for(const [hx,hy] of [[o.x,o.y],[o.x+o.w,o.y],[o.x,o.y+o.h],[o.x+o.w,o.y+o.h]]){ctx.beginPath();ctx.arc(hx,hy,7/view.scale,0,Math.PI*2);ctx.fill()}}
+ }
+ for(const r of routes){ctx.strokeStyle=r.color;ctx.lineWidth=2.5/view.scale;ctx.beginPath();r.points.forEach((p,i)=>{if(i===0)ctx.moveTo(p.x,p.y);else ctx.lineTo(p.x,p.y)});ctx.stroke()}
+ ctx.restore()
+}
+function syncGeom(){let o=objects.find(o=>o.id===selected);$('selectedInfo').textContent=o?`選択中：${o.type==='block'?'ブロック':o.type==='enemy'?'敵':'発射位置'} #${o.id}`:'未選択';for(const [id,k] of [['ox','x'],['oy','y'],['ow','w'],['oh','h']])$(id).value=o?Math.round(o[k]):''}
+function addObj(type,x,y,w,h){snap();let o={id:nextId++,type,x,y,w,h};objects=objects.filter(a=>!(type==='start'&&a.type==='start'));objects.push(o);selected=o.id;draw();syncGeom()}
+function hitTest(p){let arr=[...objects].reverse();for(let o of arr){if(p.x>=o.x-8&&p.x<=o.x+o.w+8&&p.y>=o.y-8&&p.y<=o.y+o.h+8)return o}return null}
+function handleTest(p,o){if(!o)return null;let hs=[['nw',o.x,o.y],['ne',o.x+o.w,o.y],['sw',o.x,o.y+o.h],['se',o.x+o.w,o.y+o.h]];for(let [n,x,y] of hs)if(Math.hypot(p.x-x,p.y-y)<16/view.scale)return n;return null}
+let gesture=null;
+cv.addEventListener('pointerdown',e=>{
+ cv.setPointerCapture(e.pointerId);const p=world(coords(e));pointer={id:e.pointerId,p};
+ if(e.pointerType==='touch' && cv._touches){/* no-op */}
+ if(mode==='block'){gesture={kind:'newblock',start:p,last:p};return}
+ if(mode==='enemy'){addObj('enemy',p.x-24,p.y-24,48,48);setMode('select');return}
+ if(mode==='start'){addObj('start',p.x-12,p.y-12,24,24);setMode('select');return}
+ let o=hitTest(p);if(o){selected=o.id;let h=handleTest(p,o);gesture={kind:h?'resize':'move',handle:h,obj:o.id,start:p,orig:{...o}};syncGeom();draw()}
+ else {selected=null;gesture={kind:'pan',start:coords(e),view:{...view}};syncGeom();draw()}
+});
+cv.addEventListener('pointermove',e=>{
+ if(!gesture||!pointer||pointer.id!==e.pointerId)return;let p=world(coords(e));
+ if(gesture.kind==='newblock'){gesture.last=p;draw();ctx.save();ctx.translate(view.x,view.y);ctx.scale(view.scale,view.scale);ctx.strokeStyle=colors.block;ctx.setLineDash([6,4]);ctx.strokeRect(gesture.start.x,gesture.start.y,p.x-gesture.start.x,p.y-gesture.start.y);ctx.restore();return}
+ if(gesture.kind==='pan'){let q=coords(e);view.x=gesture.view.x+q.x-gesture.start.x;view.y=gesture.view.y+q.y-gesture.start.y;draw();return}
+ let o=objects.find(a=>a.id===gesture.obj);if(!o)return;
+ if(gesture.kind==='move'){o.x=gesture.orig.x+p.x-gesture.start.x;o.y=gesture.orig.y+p.y-gesture.start.y}
+ else if(gesture.kind==='resize'){let orig=gesture.orig;let x=orig.x,y=orig.y,w=orig.w,h=orig.h;const dx=p.x-gesture.start.x,dy=p.y-gesture.start.y;if(gesture.handle.includes('w')){x+=dx;w-=dx}else w+=dx;if(gesture.handle.includes('n')){y+=dy;h-=dy}else h+=dy;if(w>8&&h>8)Object.assign(o,{x,y,w,h})}
+ draw();syncGeom()
+});
+function finish(e){if(!gesture)return;if(gesture.kind==='newblock'){let p=world(coords(e));let x=Math.min(gesture.start.x,p.x),y=Math.min(gesture.start.y,p.y),w=Math.abs(p.x-gesture.start.x),h=Math.abs(p.y-gesture.start.y);if(w>8&&h>8)addObj('block',x,y,w,h)}else if(gesture.kind==='move'||gesture.kind==='resize'){history.push(JSON.stringify(gesture.before||{objects:[],selected:null,nextId}));/* replace with pre-gesture state below */history.pop();history.push(JSON.stringify({objects:gestureSnapshot,selected,nextId}));if(history.length>60)history.shift();future=[];updateUndo()}gesture=null;pointer=null;draw()}
+let gestureSnapshot=null;
+cv.addEventListener('pointerdown',()=>{gestureSnapshot=JSON.parse(JSON.stringify({objects,selected,nextId}))});
+cv.addEventListener('pointerup',finish);cv.addEventListener('pointercancel',finish);
+cv.addEventListener('dblclick',e=>{let p=world(coords(e)),o=hitTest(p);if(o){selected=o.id;syncGeom();draw()}});
+let touchPts=[];
+cv.addEventListener('touchstart',e=>{touchPts=[...e.touches];if(e.touches.length===2){gesture=null;pinch={dist:Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY),scale:view.scale,x:view.x,y:view.y,mid:{x:(e.touches[0].clientX+e.touches[1].clientX)/2,y:(e.touches[0].clientY+e.touches[1].clientY)/2}}}}, {passive:true});
+cv.addEventListener('touchmove',e=>{if(e.touches.length===2&&pinch){let d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);let ns=Math.min(4,Math.max(.5,pinch.scale*d/pinch.dist));let r=cv.getBoundingClientRect(),mx=((e.touches[0].clientX+e.touches[1].clientX)/2-r.left)*cv.width/r.width,my=((e.touches[0].clientY+e.touches[1].clientY)/2-r.top)*cv.height/r.height;let wx=(mx-pinch.x)/pinch.scale,wy=(my-pinch.y)/pinch.scale;view.scale=ns;view.x=mx-wx*ns;view.y=my-wy*ns;draw();e.preventDefault()}},{passive:false});
+cv.addEventListener('touchend',e=>{if(e.touches.length<2)pinch=null},{passive:true});
+$('file').onchange=e=>{let f=e.target.files[0];if(!f)return;let u=URL.createObjectURL(f),im=new Image();im.onload=()=>{img=im;cv.width=im.naturalWidth;cv.height=im.naturalHeight;view={scale:1,x:0,y:0};objects=[];routes=[];selected=null;history=[];future=[];imageData=null;draw();syncGeom();say('スクショを読み込みました。自動候補検出、または手動で位置を追加できます。');URL.revokeObjectURL(u)};im.src=u};
+$('auto').onclick=()=>{if(!img){say('先にスクショを読み込んでね');return}try{const temp=document.createElement('canvas');temp.width=cv.width;temp.height=cv.height;const tc=temp.getContext('2d',{willReadFrequently:true});tc.drawImage(img,0,0,cv.width,cv.height);const d=tc.getImageData(0,0,cv.width,cv.height).data;let candidates=[];let step=Math.max(3,Math.floor(Math.min(cv.width,cv.height)/180));for(let y=step;y<cv.height-step;y+=step)for(let x=step;x<cv.width-step;x+=step){let i=(y*cv.width+x)*4,r=d[i],g=d[i+1],b=d[i+2];if(r>170&&g>120&&b<100&&r>g*1.1&&g>b*1.35){let found=candidates.some(c=>Math.hypot(c.x-x,c.y-y)<Math.min(cv.width,cv.height)*.08);if(!found)candidates.push({x,y})}}if(!candidates.length){say('黄色系の候補が見つかりませんでした。ブロック追加モードでドラッグ配置してね。');return}snap();let added=0;for(let c of candidates.slice(0,30)){let size=Math.min(cv.width,cv.height)*.055;objects.push({id:nextId++,type:'block',x:Math.max(0,c.x-size/2),y:Math.max(0,c.y-size/2),w:size,h:size}) ;added++}selected=objects[objects.length-1]?.id;draw();syncGeom();say(`黄色っぽい領域から${added}個のブロック候補を仮登録しました。誤検出があれば選択して削除・調整してね。`)}catch(err){say('自動検出に失敗しました。手動配置を使ってね。')}};
+$('undo').onclick=()=>{if(!history.length)return;future.push(JSON.stringify({objects,selected,nextId}));restore(history.pop())};
+$('redo').onclick=()=>{if(!future.length)return;history.push(JSON.stringify({objects,selected,nextId}));restore(future.pop())};
+$('delete').onclick=()=>{if(!selected)return;snap();objects=objects.filter(o=>o.id!==selected);selected=null;draw();syncGeom()};
+$('fit').onclick=()=>{if(!img)return;let r=cv.getBoundingClientRect();view.scale=Math.min(cv.width/(cv.width),cv.height/(cv.height));view.x=0;view.y=0;draw()};
+$('resetView').onclick=()=>{view={scale:1,x:0,y:0};draw()};
+$('applyGeom').onclick=()=>{let o=objects.find(o=>o.id===selected);if(!o)return;snap();o.x=+ $('ox').value||0;o.y=+ $('oy').value||0;o.w=Math.max(8,+$('ow').value||8);o.h=Math.max(8,+$('oh').value||8);draw();syncGeom()};
+function raycast(start,angle,maxB){let rad=angle*Math.PI/180,dx=Math.cos(rad),dy=Math.sin(rad),x=start.x,y=start.y,pts=[{x,y}],hits=0;const W=cv.width,H=cv.height;for(let k=0;k<maxB+1;k++){let t=Infinity,side='';if(dx>0&&((W-x)/dx)<t){t=(W-x)/dx;side='v'}if(dx<0&&((0-x)/dx)<t){t=(0-x)/dx;side='v'}if(dy>0&&((H-y)/dy)<t){t=(H-y)/dy;side='h'}if(dy<0&&((0-y)/dy)<t){t=(0-y)/dy;side='h'}let hitObj=null;for(const o of objects){if(o.type==='start')continue;if(o.type==='block'){let tests=[];if(dx!==0){tests.push({t:(o.x-x)/dx,edge:'v',yy:y+(o.x-x)/dx*dy,xx:o.x},{t:(o.x+o.w-x)/dx,edge:'v',yy:y+(o.x+o.w-x)/dx*dy,xx:o.x+o.w})}if(dy!==0){tests.push({t:(o.y-y)/dy,edge:'h',xx:x+(o.y-y)/dy*dx,yy:o.y},{t:(o.y+o.h-y)/dy,edge:'h',xx:x+(o.y+o.h-y)/dy*dx,yy:o.y+o.h})}for(let q of tests)if(q.t>1&&q.t<t&&q.xx>=o.x-1&&q.xx<=o.x+o.w+1&&q.yy>=o.y-1&&q.yy<=o.y+o.h+1){t=q.t;side=q.edge;hitObj=o}}else{let cx=o.x+o.w/2,cy=o.y+o.h/2,R=Math.max(o.w,o.h)/2,ox=x-cx,oy=y-cy,A=dx*dx+dy*dy,B=2*(ox*dx+oy*dy),C=ox*ox+oy*oy-R*R,disc=B*B-4*A*C;if(disc>=0){let q=(-B-Math.sqrt(disc))/(2*A);if(q>1&&q<t){t=q;side='circle';hitObj=o}}}}
+ if(!isFinite(t)||t<0)break;x+=dx*t;y+=dy*t;pts.push({x,y});if(hitObj){hits++;if(hitObj.type==='enemy')break}if(side==='v')dx=-dx;else if(side==='h')dy=-dy;else break}
+ return {points:pts,hits}}
+$('routes').onclick=()=>{let s=objects.find(o=>o.type==='start');if(!s){say('先に「発射位置」を選び、盤面をタップして発射位置を設定してね。');return}let center=+$('angle').value||0,spread=Math.max(0,+$('spread').value||0),step=Math.max(1,+$('step').value||5),maxB=Math.max(0,Math.min(20,+$('bounces').value||0));routes=[];let list=[];for(let a=center-spread;a<=center+spread+.001;a+=step){let r=raycast({x:s.x+s.w/2,y:s.y+s.h/2},a,maxB);r.angle=a;r.color=`hsl(${(a-center+180)*1.8%360} 95% 65%)`;routes.push(r);list.push(r)}draw();$('routeList').innerHTML='';list.sort((a,b)=>b.hits-a.hits).slice(0,12).forEach((r,i)=>{let div=document.createElement('div');div.className='route';div.innerHTML=`<span><strong>${r.angle.toFixed(0)}°</strong>　接触候補 ${r.hits} 回</span><button>この角度を採用</button>`;div.querySelector('button').onclick=()=>{$('angle').value=r.angle;routes=[r];draw()};$('routeList').appendChild(div)});say(`${routes.length}本の候補ルートを表示しました（簡易計算）。`)};
+$('clearRoutes').onclick=()=>{routes=[];draw();$('routeList').innerHTML=''};
+draw();syncGeom();updateUndo();
+})();
+</script>
+</body>
+</html>
