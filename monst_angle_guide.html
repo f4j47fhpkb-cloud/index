@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="theme-color" content="#111827">
+<title>モンスト反射ルートガイド</title>
+<style>
+:root{color-scheme:dark;--bg:#111827;--panel:#1f2937;--line:#374151;--text:#f9fafb;--muted:#cbd5e1;--accent:#38bdf8}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+header{padding:16px 14px 10px}h1{font-size:20px;margin:0 0 5px}p{margin:5px 0;color:var(--muted);font-size:13px;line-height:1.5}
+main{padding:0 12px 28px;max-width:900px;margin:auto}.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px;margin:10px 0}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.row>*{flex:1 1 auto}label{font-size:13px;color:var(--muted);display:block;margin-bottom:5px}
+button,.filebtn,select,input[type=number],input[type=range]{font:inherit}
+button,.filebtn{border:1px solid #475569;background:#334155;color:white;border-radius:10px;padding:10px 12px;cursor:pointer}
+button.active{background:#075985;border-color:#38bdf8}button.primary{background:#0369a1;border-color:#38bdf8}
+input[type=number],select{background:#0f172a;border:1px solid #475569;color:white;border-radius:8px;padding:9px;max-width:120px}
+input[type=range]{width:100%;accent-color:var(--accent)}
+#stage{width:100%;overflow:hidden;border-radius:10px;background:#020617;touch-action:pan-y}
+canvas{display:block;width:100%;height:auto;touch-action:pan-y}
+.small{font-size:12px;color:var(--muted)}.status{font-size:13px;line-height:1.5;color:#bae6fd}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.grid>div{min-width:0}
+.pill{display:inline-block;padding:4px 8px;border-radius:99px;background:#0f172a;font-size:12px;color:#bae6fd}
+#objects{font-size:13px;line-height:1.7;overflow-wrap:anywhere}
+hr{border:0;border-top:1px solid var(--line);margin:12px 0}
+@media(min-width:700px){.layout{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(280px,1fr);gap:12px}.layout>section{min-width:0}}
+</style>
+</head>
+<body>
+<header>
+  <h1>🎯 モンスト反射ルートガイド</h1>
+  <p>スクショを読み込み、発射位置・敵・ブロックを手動指定。複数の角度の簡易軌道を重ねて比較できます。</p>
+</header>
+<main>
+  <div class="panel">
+    <div class="row">
+      <label class="filebtn" style="text-align:center">スクリーンショットを選択<input id="file" type="file" accept="image/*" hidden></label>
+      <button id="clear" type="button">盤面設定をクリア</button>
+      <button id="export" type="button">画像を書き出す</button>
+    </div>
+    <p class="small">画像はこの端末のブラウザ内で処理します。サーバーには送信しません。</p>
+  </div>
+  <div class="layout">
+    <section>
+      <div class="panel" style="padding:8px">
+        <div id="stage"><canvas id="cv" width="900" height="600"></canvas></div>
+        <p class="small">キャンバスをタップ：選択中のマーカーを追加。ブロックは始点をタップしてから終点をタップ。</p>
+      </div>
+    </section>
+    <section>
+      <div class="panel">
+        <label for="tool">配置モード</label>
+        <select id="tool" style="width:100%;max-width:none">
+          <option value="start">発射位置（味方）</option>
+          <option value="enemy">敵（円）</option>
+          <option value="block">ブロック（四角形・2タップ）</option>
+          <option value="erase">マーカー削除</option>
+        </select>
+        <div class="row" style="margin-top:10px">
+          <button id="undo">ひとつ戻す</button>
+          <button id="autodetect">自動補助候補を表示</button>
+        </div>
+        <p id="autoNote" class="small">自動補助は色・輪郭を使った候補表示です。敵やブロックの正確な認識ではないため、必ず目視で確認してください。</p>
+        <hr>
+        <label>比較する角度（度）</label>
+        <div class="grid">
+          <div><label for="center">中心角度</label><input id="center" type="number" min="0" max="359" value="45" style="width:100%"></div>
+          <div><label for="spread">比較幅（±度）</label><input id="spread" type="number" min="0" max="90" value="10" style="width:100%"></div>
+          <div><label for="step">角度間隔</label><select id="step" style="width:100%;max-width:none"><option>1</option><option selected>5</option><option>10</option></select></div>
+          <div><label for="bounces">最大反射回数</label><select id="bounces" style="width:100%;max-width:none"><option>1</option><option selected>4</option><option>8</option><option>12</option></select></div>
+        </div>
+        <div class="row" style="margin-top:10px">
+          <button class="primary" id="draw">ルートを計算・表示</button>
+          <button id="hideRoutes">ルートを隠す</button>
+        </div>
+        <p id="result" class="status">まずスクリーンショットを読み込み、発射位置をタップしてください。</p>
+      </div>
+      <div class="panel">
+        <strong>登録したオブジェクト</strong>
+        <div id="objects" class="small">まだありません。</div>
+      </div>
+      <div class="panel">
+        <strong>使い方・注意</strong>
+        <p>1. スクショを読み込む</p>
+        <p>2. 「発射位置」を選んで味方をタップ</p>
+        <p>3. 敵・ブロックを登録（ブロックは対角2点をタップ）</p>
+        <p>4. 中心角度・比較幅・間隔を選んで計算</p>
+        <hr>
+        <p>これは幾何学的な簡易シミュレーターです。実際のモンストの物理挙動、キャラの当たり判定、敵の弱点、加速・減速ギミック、友情コンボ、反射制限などを完全再現しません。予測ルートは目安として使ってください。</p>
+      </div>
+    </section>
+  </div>
+</main>
+<script>
+(() => {
+const cv=document.getElementById('cv'),ctx=cv.getContext('2d');
+const file=document.getElementById('file'),tool=document.getElementById('tool');
+const state={img:null,objects:[],routes:true,blockFirst:null,auto:[]};
+const $=id=>document.getElementById(id);
+let baseW=900,baseH=600;
+function setStatus(s){$('result').textContent=s}
+function fitCanvas(w,h){const maxW=1200;let scale=Math.min(1,maxW/w);baseW=Math.round(w*scale);baseH=Math.round(h*scale);cv.width=baseW;cv.height=baseH;render()}
+function loadImage(src){const im=new Image();im.onload=()=>{state.img=im;state.objects=[];state.auto=[];state.blockFirst=null;fitCanvas(im.naturalWidth,im.naturalHeight);setStatus('画像を読み込みました。発射位置をタップしてください。');updateObjects()};im.src=src}
+file.addEventListener('change',e=>{const f=e.target.files&&e.target.files[0];if(!f)return;const url=URL.createObjectURL(f);loadImage(url)});
+function render(){
+ ctx.clearRect(0,0,cv.width,cv.height);
+ if(state.img)ctx.drawImage(state.img,0,0,cv.width,cv.height);
+ else {ctx.fillStyle='#020617';ctx.fillRect(0,0,cv.width,cv.height);ctx.fillStyle='#cbd5e1';ctx.textAlign='center';ctx.font='22px sans-serif';ctx.fillText('スクリーンショットを読み込んでください',cv.width/2,cv.height/2)}
+ // candidate assist markers
+ for(const p of state.auto){ctx.beginPath();ctx.arc(p.x,p.y,p.r||16,0,Math.PI*2);ctx.strokeStyle='#facc15';ctx.lineWidth=2;ctx.setLineDash([5,4]);ctx.stroke();ctx.setLineDash([])}
+ for(const o of state.objects){
+  if(o.type==='start'){ctx.beginPath();ctx.arc(o.x,o.y,10,0,Math.PI*2);ctx.fillStyle='#22c55e';ctx.fill();ctx.strokeStyle='white';ctx.lineWidth=2;ctx.stroke();ctx.fillStyle='white';ctx.font='bold 12px sans-serif';ctx.fillText('S',o.x,o.y+4)}
+  else if(o.type==='enemy'){ctx.beginPath();ctx.arc(o.x,o.y,o.r,0,Math.PI*2);ctx.strokeStyle='#fb7185';ctx.lineWidth=3;ctx.stroke();ctx.fillStyle='rgba(251,113,133,.18)';ctx.fill();ctx.fillStyle='#fff';ctx.font='12px sans-serif';ctx.fillText('敵',o.x,o.y+4)}
+  else if(o.type==='block'){ctx.fillStyle='rgba(250,204,21,.18)';ctx.fillRect(o.x,o.y,o.w,o.h);ctx.strokeStyle='#facc15';ctx.lineWidth=2;ctx.strokeRect(o.x,o.y,o.w,o.h)}
+ }
+ if(state.routes&&state.objects.some(o=>o.type==='start'))drawRoutes();
+ if(state.blockFirst){ctx.beginPath();ctx.arc(state.blockFirst.x,state.blockFirst.y,7,0,Math.PI*2);ctx.fillStyle='#facc15';ctx.fill()}
+}
+function getStart(){return state.objects.find(o=>o.type==='start')}
+function getObstacles(){return state.objects.filter(o=>o.type==='enemy'||o.type==='block')}
+function segmentRectHit(x,y,dx,dy,r){
+ let tmin=0,tmax=Infinity;
+ const tests=[[x,dx,r.x,r.x+r.w],[y,dy,r.y,r.y+r.h]];
+ for(const [p,d,min,max] of tests){if(Math.abs(d)<1e-9){if(p<min||p>max)return null}else{let a=(min-p)/d,b=(max-p)/d;if(a>b)[a,b]=[b,a];tmin=Math.max(tmin,a);tmax=Math.min(tmax,b);if(tmin>tmax)return null}}
+ return tmin>=0?tmin:null;
+}
+function rayHit(x,y,dx,dy,maxDist){
+ let best=maxDist,kind='wall';
+ if(dx>0)best=Math.min(best,(cv.width-x)/dx);else if(dx<0)best=Math.min(best,(0-x)/dx);
+ if(dy>0)best=Math.min(best,(cv.height-y)/dy);else if(dy<0)best=Math.min(best,(0-y)/dy);
+ let hit=null;
+ for(const o of getObstacles()){
+  if(o.type==='enemy'){
+   const fx=x-o.x,fy=y-o.y,a=dx*dx+dy*dy,b=2*(fx*dx+fy*dy),c=fx*fx+fy*fy-o.r*o.r,disc=b*b-4*a*c;
+   if(disc>=0){let t=(-b-Math.sqrt(disc))/(2*a);if(t<0.001)t=(-b+Math.sqrt(disc))/(2*a);if(t>=0.001&&t<best){best=t;kind='enemy';hit=o}}
+  } else {
+   const t=segmentRectHit(x,y,dx,dy,o);if(t!==null&&t>=0.001&&t<best){best=t;kind='block';hit=o}
+  }
+ }
+ return {t:best,kind,hit};
+}
+function simulate(deg,maxB){
+ const s=getStart();if(!s)return null;
+ let x=s.x,y=s.y,rad=deg*Math.PI/180,dx=Math.cos(rad),dy=-Math.sin(rad),pts=[{x,y}],b=0,end='range';
+ for(let i=0;i<maxB+1;i++){
+  const h=rayHit(x,y,dx,dy,2000);if(!isFinite(h.t)||h.t<0)break;
+  x+=dx*h.t;y+=dy*h.t;pts.push({x,y});
+  if(h.kind==='enemy'||h.kind==='block'){end=h.kind;break}
+  if(b>=maxB){end='limit';break}
+  if(x<1||x>cv.width-1)dx=-dx;
+  if(y<1||y>cv.height-1)dy=-dy;
+  x=Math.max(1,Math.min(cv.width-1,x));y=Math.max(1,Math.min(cv.height-1,y));b++;
+ }
+ return {deg,pts,end,bounces:b};
+}
+const colors=['#38bdf8','#f472b6','#a78bfa','#34d399','#fb923c','#e879f9','#facc15','#60a5fa'];
+function drawRoutes(){
+ const s=getStart();if(!s)return;
+ const center=Number($('center').value)||0,spread=Math.max(0,Math.min(90,Number($('spread').value)||0)),step=Math.max(1,Number($('step').value)||5),maxB=Math.max(1,Number($('bounces').value)||4);
+ let count=0,hits=0;
+ for(let d=-spread;d<=spread+0.0001;d+=step){
+  const deg=((center+d)%360+360)%360,r=simulate(deg,maxB);if(!r)continue;
+  ctx.beginPath();ctx.moveTo(r.pts[0].x,r.pts[0].y);for(let i=1;i<r.pts.length;i++)ctx.lineTo(r.pts[i].x,r.pts[i].y);
+  ctx.strokeStyle=colors[count%colors.length];ctx.lineWidth=Math.abs(d)<0.01?4:2;ctx.globalAlpha=Math.abs(d)<0.01?1:.78;ctx.stroke();ctx.globalAlpha=1;
+  const end=r.pts[r.pts.length-1];ctx.beginPath();ctx.arc(end.x,end.y,3,0,Math.PI*2);ctx.fillStyle=colors[count%colors.length];ctx.fill();
+  if(r.end==='enemy')hits++;count++;
+ }
+ ctx.fillStyle='rgba(15,23,42,.85)';ctx.fillRect(8,8,Math.min(330,cv.width-16),36);ctx.fillStyle='white';ctx.font='13px sans-serif';ctx.textAlign='left';ctx.fillText(`中心 ${center}° / ${count}ルート / 敵接触候補 ${hits}`,16,31);
+}
+function coords(e){const r=cv.getBoundingClientRect();return{x:(e.clientX-r.left)*cv.width/r.width,y:(e.clientY-r.top)*cv.height/r.height}}
+cv.addEventListener('pointerdown',e=>{
+ if(!state.img){setStatus('先にスクリーンショットを読み込んでください。');return}
+ const p=coords(e),mode=tool.value;
+ if(mode==='start'){state.objects=state.objects.filter(o=>o.type!=='start');state.objects.push({type:'start',x:p.x,y:p.y});setStatus('発射位置を設定しました。')}
+ else if(mode==='enemy'){state.objects.push({type:'enemy',x:p.x,y:p.y,r:Math.max(10,Math.min(30,cv.width*.025))});setStatus('敵の中心を登録しました。円の大きさは簡易設定です。')}
+ else if(mode==='block'){if(!state.blockFirst){state.blockFirst=p;setStatus('ブロックの反対側の角をタップしてください。')}else{let a=state.blockFirst;state.objects.push({type:'block',x:Math.min(a.x,p.x),y:Math.min(a.y,p.y),w:Math.max(4,Math.abs(p.x-a.x)),h:Math.max(4,Math.abs(p.y-a.y))});state.blockFirst=null;setStatus('ブロックを登録しました。')}}
+ else if(mode==='erase'){let best=-1,dist=Infinity;state.objects.forEach((o,i)=>{let cx=o.type==='block'?o.x+o.w/2:o.x,cy=o.type==='block'?o.y+o.h/2:o.y,d=Math.hypot(cx-p.x,cy-p.y);if(d<dist){dist=d;best=i}});if(best>=0&&dist<55){state.objects.splice(best,1);setStatus('近くのオブジェクトを削除しました。')}else setStatus('削除対象の近くをタップしてください。')}
+ updateObjects();render();
+});
+function updateObjects(){
+ const counts={start:0,enemy:0,block:0};state.objects.forEach(o=>counts[o.type]++);
+ $('objects').innerHTML=`発射位置：${counts.start}個<br>敵：${counts.enemy}個<br>ブロック：${counts.block}個<br><span class="small">敵は円、ブロックは四角形で近似しています。</span>`;
+}
+$('draw').onclick=()=>{if(!getStart()){setStatus('発射位置を先に指定してください。');return}state.routes=true;render();setStatus('複数角度のルートを表示しました。色は角度ごとに異なります。')};
+$('hideRoutes').onclick=()=>{state.routes=false;render();setStatus('ルートを非表示にしました。')};
+$('undo').onclick=()=>{if(state.blockFirst){state.blockFirst=null;setStatus('ブロックの仮始点を取り消しました。')}else{state.objects.pop();setStatus('最後の登録を取り消しました。')}updateObjects();render()};
+$('clear').onclick=()=>{state.objects=[];state.auto=[];state.blockFirst=null;state.routes=false;updateObjects();render();setStatus('盤面設定をクリアしました。スクショは残っています。')};
+$('export').onclick=()=>{render();const a=document.createElement('a');a.download='monst-angle-routes.png';a.href=cv.toDataURL('image/png');a.click()};
+['center','spread','step','bounces'].forEach(id=>$(id).addEventListener('change',()=>{if(state.routes)render()}));
+// lightweight assist: inspect a downscaled image for saturated/bright pixels and cluster them.
+// This is only a visual suggestion layer, not reliable object recognition.
+$('autodetect').onclick=()=>{
+ if(!state.img){setStatus('先にスクリーンショットを読み込んでください。');return}
+ const tmp=document.createElement('canvas'),tw=100,th=Math.max(50,Math.round(tw*cv.height/cv.width));tmp.width=tw;tmp.height=th;
+ const tc=tmp.getContext('2d',{willReadFrequently:true});tc.drawImage(state.img,0,0,tw,th);const im=tc.getImageData(0,0,tw,th),d=im.data,mask=new Uint8Array(tw*th);
+ for(let y=2;y<th-2;y++)for(let x=2;x<tw-2;x++){
+  const i=(y*tw+x)*4,r=d[i],g=d[i+1],b=d[i+2],mx=Math.max(r,g,b),mn=Math.min(r,g,b),sat=mx?((mx-mn)/mx):0;
+  if(sat>.55&&mx>105)mask[y*tw+x]=1;
+ }
+ const seen=new Uint8Array(tw*th),found=[];
+ for(let i=0;i<mask.length;i++){if(!mask[i]||seen[i])continue;let stack=[i],xs=0,ys=0,n=0,minx=tw,miny=th,maxx=0,maxy=0;seen[i]=1;
+  while(stack.length){const j=stack.pop(),x=j%tw,y=Math.floor(j/tw);xs+=x;ys+=y;n++;minx=Math.min(minx,x);maxx=Math.max(maxx,x);miny=Math.min(miny,y);maxy=Math.max(maxy,y);
+   for(const k of [j-1,j+1,j-tw,j+tw])if(k>=0&&k<mask.length&&!seen[k]&&mask[k]){seen[k]=1;stack.push(k)}
+  }
+  if(n>=5&&n<=250&&maxx-minx>=2&&maxy-miny>=2){found.push({x:(xs/n)/tw*cv.width,y:(ys/n)/th*cv.height,r:Math.max(10,Math.min(24,(maxx-minx+maxy-miny)/2/tw*cv.width))})}
+ }
+ state.auto=found.slice(0,80);render();$('autoNote').textContent=`候補を${state.auto.length}個表示しました（黄色の点線）。色の多いエフェクト等も拾うため、不要な候補は無視してください。候補をタップして登録する機能は未搭載なので、必要な位置は手動で登録してください。`;setStatus('自動補助候補を黄色の点線で表示しました。正確な認識ではありません。');
+};
+fitCanvas(baseW,baseH);
+})();
+</script>
+</body>
+</html>
